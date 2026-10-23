@@ -3,7 +3,8 @@
 // Every toolbar control is driven as a user would (clicks, the keyboard, the sliders) and its effect read back from the viewer
 // (window.__explorer() returns the TreeViewer): Width / Height zoom the window and follow a wheel zoom, font and branch width reach the theme, layout and
 // tree type the options, truncation the label format; search counts, highlights, steps and the highlight style; with no tool a
-// click opens the node menu (each kind of node: tip, clade, collapsed clade, root; Escape closes it; a plain click collapses nothing)
+// click opens the node menu (each kind of node: tip, clade, collapsed clade from its branch, root; Escape closes it; a plain click collapses nothing; a
+// click on a collapsed clade's triangle expands it)
 // and Collapse, Expand and Info are its items; the tip Info is on stays selected across Layout and Phylo/Clado switches (#61); the node the menu is for keeps its ring with the pointer in the menu, and Swap marks its first pick until the second click or Escape (#65); colour, erase and the innermost-colour-wins order; reroot, flip, swap
 // (siblings and not), midpoint, ladderise (by tips, depth, height) and undo (button and Ctrl+Z); undo within a memory budget
 // (?undo-budget: the oldest step dropped first, Reset only for a tree larger than the budget, #44); show only a clade, Up one level
@@ -12,8 +13,9 @@
 // inspector's numbers are monospace; Export stays in view at 1024 px; the innermost clade colour wins whatever the order;
 // node labels (support, length, support as percent); aligned labels (one x for the label anchors, a click on one opens the menu; in
 // radial one distance from the root, toBlob equal to the screen); the alignment track (a 'fill' column) and its legend; the overview and legend controls; one action colour (--ex-primary) for active toggles, active tools and the hover box, in light and dark, and --ex-hover-tip for the box alone (#74); dark mode reaches
-// the canvas; the resize handle; one tree from each group of the playground's catalogue, a large one included.
-/* global __v, __order, __tipAt, __clade, __inView -- helpers the page gets from HELPERS below, used inside page.evaluate */
+// the canvas; the resize handle; one tree from each group of the playground's catalogue, a large one included; the drill-down on GTDB 190k
+// (#57: Overview: 50 clades, a click expands a collapsed clade in place, Show only jumps into one, Back returns).
+/* global __v, __order, __tipAt, __clade, __inView, __stem -- helpers the page gets from HELPERS below, used inside page.evaluate */
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -65,6 +67,13 @@ const HELPERS = () => {
       }
     }
     return null;
+  };
+  // a point on the branch into node n (rectangular): a click there is a 'branch' hit, which opens the menu of a collapsed clade
+  window.__stem = (n) => {
+    const t = v().getTree();
+    const q = v().locateNode(n);
+    const p = v().locateNode(t.parent[n]);
+    return q && p ? { x: q.x - Math.min(4, (q.x - p.x) / 2), y: q.y } : null;
   };
 };
 const open = async (tree, extra = '') => {
@@ -500,8 +509,12 @@ const tri = await ev((n) => {
   return b ? { x: b.x + b.width * 0.8, y: b.y + b.height / 2 } : null;
 }, c1.node);
 ok(tri !== null, 'the collapsed clade is one triangle with the id of the clade');
-// a collapsed clade: Expand, Info, Show only, Colour…
-await openMenu(tri);
+// a click on the triangle expands it (drill-down, #57): no menu; a clade this small opens whole
+await click(tri);
+ok((await menu.count()) === 0 && (await rows()) === before && (await btn('Expand all').count()) === 0, 'a click on a collapsed clade expands it');
+await collapseAt(c1);
+// a collapsed clade's menu, from a click on its branch: Expand, Info, Show only, Colour…
+await openMenu(await ev((n) => __stem(n), c1.node));
 ok((await menuItems()).join('|') === 'Expand|Info|Show only|Colour…', `a collapsed clade's menu: ${(await menuItems()).join(' | ')}`);
 await act('expand');
 ok((await rows()) === before && (await btn('Expand all').count()) === 0, 'Expand in the menu opens it again');
@@ -1274,7 +1287,7 @@ console.log('Show only, Up, Back with hover, colours, collapse and support: no p
       for (let i = 1; i < t.nodeCount; i++)
         if (t.firstChild[i] >= 0 && t.leafEnd[i] - t.leafStart[i] >= 3 && !!v.layout.collapsed?.[i] === co) {
           const q = v.locateNode(i);
-          if (q) return q;
+          if (q) return co ? __stem(i) : q; // a click on a collapsed clade's triangle expands it; its branch opens the menu
         }
       return null;
     }, co);
@@ -2220,6 +2233,76 @@ await open('edge-internal-support');
   const remote = await page.locator('.page-head select option[value="otl-2m-full"]').count();
   ok(remote === 1, 'the 2.4M-tip tree with a remote URL is on offer');
 }
+// Drill-down (#57) on a large tree: Overview collapses to about 50 rows, a click on a collapsed clade expands it in place (its children
+// in, with an overview of about 20 rows inside), Show only in its menu jumps into it with an overview there, and Back returns
+const drillDown = async (tips) => {
+  const collapsedNodes = () =>
+    ev(() => {
+      const t = __v().getTree();
+      const out = [];
+      for (let i = 1; i < t.nodeCount; i++) if (__v().layout.collapsed?.[i]) out.push(i);
+      return out;
+    });
+  const largest = (skip) =>
+    ev(
+      ([skip]) => {
+        const t = __v().getTree();
+        const ids = [];
+        for (let i = 1; i < t.nodeCount; i++) if (__v().layout.collapsed?.[i]) ids.push(i);
+        ids.sort((a, b) => t.leafEnd[b] - t.leafStart[b] - (t.leafEnd[a] - t.leafStart[a]));
+        const n = ids.filter((i) => !skip.includes(i))[0];
+        const b = __v().nodeBounds(n);
+        return { node: n, end: t.subtreeEnd[n], tips: t.leafEnd[n] - t.leafStart[n], tri: { x: b.x + b.width * 0.8, y: b.y + b.height / 2 } };
+      },
+      [skip],
+    );
+  await btn('Overview: 50 clades').click();
+  await page.waitForTimeout(400);
+  const r0 = await rows();
+  const c0 = await collapsedNodes();
+  ok(r0 <= 50 && r0 >= 40 && (await tipCount()) === tips, `Overview: ${r0} rows (at most 50), ${c0.length} collapsed clades, all ${tips} tips kept`);
+  const big = await largest([]);
+  await page.mouse.move(big.tri.x, big.tri.y);
+  await page.waitForTimeout(300);
+  ok((await page.locator('.ex-tip--menu').innerText()).startsWith('Click to expand'), 'the hover box on a collapsed clade says a click expands it');
+  await click(big.tri);
+  const r1 = await rows();
+  const c1 = await collapsedNodes();
+  // every child of the clade is drawn now, open or collapsed
+  const kids = await ev((n) => {
+    const t = __v().getTree();
+    const out = [];
+    for (let c = t.firstChild[n]; c >= 0; c = t.nextSibling[c]) out.push(__v().locateNode(c) !== null);
+    return out;
+  }, big.node);
+  const inside = c1.filter((i) => i > big.node && i < big.end);
+  ok(
+    (await menu.count()) === 0 && !c1.includes(big.node) && r1 > r0 && r1 <= r0 - 1 + 20,
+    `a click expands the largest collapsed clade (${big.tips} tips) in place: ${r0} → ${r1} rows, at most 19 more`,
+  );
+  ok(
+    c0.every((i) => i === big.node || c1.includes(i)) && kids.every(Boolean) && inside.length > 0,
+    `its children come in (${kids.length}), its large subclades collapsed (${inside.length}), the other collapsed clades stay`,
+  );
+  // jump into another collapsed clade: Show only from its menu (a click on its branch), with an overview inside; Back returns
+  const other = await largest([big.node]);
+  await openMenu(await ev((n) => __stem(n), other.node));
+  await act('subtree');
+  await page.waitForTimeout(400);
+  const r2 = await rows();
+  ok(
+    (await tipCount()) === other.tips && r2 <= 50 && r2 >= 20,
+    `Show only jumps into a collapsed clade of ${other.tips} tips, with its overview: ${r2} rows`,
+  );
+  await btn('Back').click();
+  await page.waitForTimeout(400);
+  ok(
+    (await tipCount()) === tips && (await rows()) === r1 && (await ev((n) => __v().layout.collapsed?.[n] === 1, other.node)),
+    `Back returns to the tree as it was (${await rows()} rows, the clade jumped into collapsed again)`,
+  );
+  await btn('Expand all').click();
+  await page.waitForTimeout(300);
+};
 const loadVia = async (id) => {
   const t0 = Date.now();
   await page.selectOption('.page-head select', id);
@@ -2300,6 +2383,7 @@ for (const [id, tipsWanted] of [
     'nothing is disabled on a large tree',
   );
   ok((await btn('Reroot').isEnabled()) && (await btn('Color').isEnabled()), 'and the tools are on');
+  await drillDown(n2);
   // search is not capped (#58): every match is counted and highlighted
   await page.locator('button[aria-label="Search tips"]').click();
   await page.keyboard.type('a');

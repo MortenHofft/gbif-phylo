@@ -91,3 +91,10 @@ export const IconFit = () => (
     <path d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4" {...s} strokeWidth="1.6" />
   </svg>
 );
+/** Overview of the largest clades: a tree whose branches end in collapsed clades (triangles). */
+export const IconClades = () => (
+  <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+    <path d="M1.5 7h2M3.5 3v8M3.5 3h3M3.5 11h3M3.5 7h3" {...s} strokeWidth="1.3" />
+    <path d="M6.5 3l6-1.5v3zM6.5 7l5-1.2v2.4zM6.5 11l6-1.5v3z" {...s} strokeWidth="1.1" />
+  </svg>
+);

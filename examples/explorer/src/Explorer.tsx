@@ -40,6 +40,9 @@ type HighlightStyle = 'band' | 'dim' | 'both';
 const NO_NODES: number[] = [];
 /** Rooting inside a clade shown alone puts its tips on both sides of the new root, so it would no longer be one clade. */
 const REROOT_IN_FOCUS = 'Reroot inside a clade shown alone would split it: go Up one level or Back to the whole tree first';
+/** Drill-down (tree-ops autoCollapse): the rows of the overview of the clade shown, and of a collapsed clade expanded in place. */
+const OVERVIEW_ROWS = 50;
+const EXPAND_ROWS = 20;
 
 /** Reactree's 12 swatches; the colours themselves are CSS custom properties (--ex-palette-<name>) in explorer.css. */
 const PALETTE = ['Red', 'Orange', 'Amber', 'Lime', 'Emerald', 'Teal', 'Sky', 'Indigo', 'Violet', 'Pink', 'Slate', 'Brown'];
@@ -103,6 +106,9 @@ const pct = (v: number, lo: number, hi: number) => `${Math.min(1, Math.max(0, (v
 const sameWindow = (a: Viewport, b: Viewport) => a.x0 === b.x0 && a.x1 === b.x1 && a.y0 === b.y0 && a.y1 === b.y1;
 const fmt = (x: number) => x.toFixed(6).replace(/\.?0+$/, '');
 const cssVar = (name: string) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+
+/** A pointer click on the triangle of a collapsed clade expands it (drill-down); a click on its branch, or Enter, opens its menu. */
+const expandsOnClick = (e: TreeNodeEvent) => e.collapsed && e.kind === 'summary' && e.via === 'pointer' && !e.run;
 
 /** The selected node (of the tree) in the ids of what is shown: itself, or the nearest ancestor the view keeps (collapse by support
  *  contracts inner nodes into their parent; the selection then moves to that clade, as the viewer's does to a collapsed clade). Null when
@@ -639,6 +645,24 @@ export function Explorer({
     const v = ops.focusedNode(f);
     flash(v < 0 ? 'Showing the whole tree' : `Showing only a clade of ${tree.tipCountOf(v).toLocaleString('en')} tips`);
   };
+  // ---- drill-down (#57): the overview of the clade shown (its largest clades open, the rest collapsed, about OVERVIEW_ROWS rows), and
+  // on a collapsed clade expand in place (a click) or jump into it (Show only). tree-ops mergeAutoCollapse replaces the collapsed clades
+  // inside the clade by its own overview and keeps the others. Rows are counted on `tree`, before collapse by support.
+  const overviewOfShown = () => {
+    const root = Math.max(0, ops.focusedNode(focus));
+    const next = ops.mergeAutoCollapse(tree, collapsed, { root, maxRows: OVERVIEW_ROWS });
+    setCollapsed(next);
+    deselect();
+    const n = next.filter((v) => v > root && v < tree.subtreeEnd[root]).length;
+    flash(n ? `Overview: the largest clades open, ${n.toLocaleString('en')} collapsed. Click one to expand it` : 'The clade shown fits open');
+  };
+  /** Open the collapsed clade `v` (of `tree`) with its own overview of about EXPAND_ROWS rows inside. */
+  const expandInPlace = (v: number) => setCollapsed((cs) => ops.mergeAutoCollapse(tree, cs, { root: v, maxRows: EXPAND_ROWS }));
+  /** Show only the collapsed clade `v`, with its overview inside. It stays collapsed in the view around it, so Back returns to that view. */
+  const jumpInto = (v: number) => {
+    setCollapsed((cs) => [...ops.mergeAutoCollapse(tree, cs, { root: v, maxRows: OVERVIEW_ROWS }), v].sort((a, b) => a - b));
+    navigate(ops.focusOn(tree, focus, v));
+  };
   const colourOf = (name: string) => cssVar(`--ex-palette-${name.toLowerCase()}`);
   /** Paint (or with ERASE, unpaint) the clade `v` of `tree`. The label is left out: the legend then names the clade by its node. */
   const paint = (v: number, name: string) => {
@@ -681,6 +705,13 @@ export function Explorer({
 
   // ---- clicks: with a tool active a click acts at once, as in Reactree. With none, the viewer's node menu opens (nodeMenu below).
   const onToolClick = (e: TreeNodeEvent) => {
+    // a click on a collapsed clade expands it: no menu (its branch or Enter opens the menu), no selection
+    if (mode === 'none' && expandsOnClick(e)) {
+      e.preventDefault();
+      const v = toTree(e.node);
+      if (v >= 0) expandInPlace(v);
+      return;
+    }
     if (mode !== 'none') e.preventDefault(); // a tool acts on the click: it neither selects nor opens the menu
     onClick(e);
   };
@@ -729,7 +760,7 @@ export function Explorer({
     const expand: NodeMenuItem = {
       id: 'expand',
       label: 'Expand',
-      onSelect: () => setCollapsed((cs) => cs.filter((c) => c !== v)),
+      onSelect: () => expandInPlace(v),
     };
     const collapse: NodeMenuItem = {
       id: 'collapse',
@@ -770,7 +801,7 @@ export function Explorer({
       },
     };
     const copy: NodeMenuItem = { id: 'copy', label: 'Copy Newick', onSelect: () => copyNewick(v) };
-    if (isCollapsed) return [expand, info, only, colour];
+    if (isCollapsed) return [expand, info, { ...only, onSelect: () => jumpInto(v) }, colour];
     // inside a clade shown alone a reroot would split it (REROOT_IN_FOCUS): the menu leaves it out there
     const canReroot = !ops.canGoUp(focus) || shownRoot;
     if (isTip) return canReroot ? [info, reroot, swap, colour] : [info, swap, colour];
@@ -828,7 +859,8 @@ export function Explorer({
       default:
         return (
           <span className="ex-tip ex-tip--menu">
-            Click for actions<span className="ex-tip-name">{e.collapsed ? `${name} (collapsed)` : name}</span>
+            {expandsOnClick(e) ? 'Click to expand' : 'Click for actions'}
+            <span className="ex-tip-name">{e.collapsed ? `${name} (collapsed)` : name}</span>
           </span>
         );
     }
@@ -1214,9 +1246,20 @@ export function Explorer({
           onToggle={() => setSupportOn((o) => !o)}
           onThreshold={setMinSupport}
         />
+        {(collapsed.length > 0 || shown.tipCount > OVERVIEW_ROWS) && <div className="ex-divider" />}
+        {shown.tipCount > OVERVIEW_ROWS && (
+          <button
+            type="button"
+            className="ex-btn ex-clades"
+            title={`Collapse the clade shown to about ${OVERVIEW_ROWS} rows, its largest clades open. Click a collapsed clade to expand it; Show only in its menu (its branch, or Enter) jumps into it`}
+            onClick={overviewOfShown}
+          >
+            <J.IconClades />
+            Overview: {OVERVIEW_ROWS} clades
+          </button>
+        )}
         {collapsed.length > 0 && (
           <>
-            <div className="ex-divider" />
             <button
               type="button"
               className="ex-btn ex-expand"

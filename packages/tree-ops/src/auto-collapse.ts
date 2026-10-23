@@ -81,3 +81,23 @@ export function autoCollapse(t: TreeInput, o: AutoCollapseOptions): number[] {
   }
   return out.sort((a, b) => a - b);
 }
+
+/**
+ * Drill-down: the collapsed set `collapsed` with the clade `o.root` (default the root) replaced by its own overview. The ids in that
+ * clade, `root` included, are dropped and {@link autoCollapse}'s are added, so `root` itself is open: for a collapsed clade that is
+ * "expand in place" (its largest subclades open, the rest collapsed, within `maxRows`); for the clade shown alone it is the overview
+ * inside it. When not even the children of `root` fit in `maxRows` (a wide polytomy), each child that is a clade is collapsed instead,
+ * one row each. Ids outside the clade are kept as they are. Returns node ids in preorder, without duplicates; the input is not changed.
+ */
+export function mergeAutoCollapse(t: TreeInput, collapsed: readonly number[], o: AutoCollapseOptions): number[] {
+  const root = o.root ?? 0;
+  let inside = autoCollapse(t, o);
+  if (inside.length === 1 && inside[0] === root) {
+    inside = [];
+    for (let c = t.firstChild[root]; c >= 0; c = t.nextSibling[c]) if (t.childCount[c] > 0) inside.push(c);
+  }
+  const end = t.subtreeEnd[root];
+  const out = new Set(inside);
+  for (const v of collapsed) if (v < root || v >= end) out.add(v);
+  return [...out].sort((a, b) => a - b);
+}

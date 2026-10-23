@@ -21,4 +21,5 @@ the time. Paths in them (`spikes/custom/...`, `spikes/shared/...`, `docs/results
 | [tree-ops.md](tree-ops.md), [tree-ops-libraries.md](tree-ops-libraries.md) | Tree operations: results and the libraries looked at |
 | [undo-memory.md](undo-memory.md) | What one more tree costs in memory (bytes per node, 10k to 1.5M tips) and the bounded undo of the examples (#44) |
 | [highlight-cost.md](highlight-cost.md) | What highlighting 10k to 1M tips costs on the 2.39M-tip OTL tree, before and after bounding the bands by pixels, and the label scan of a search (#58) |
+| [auto-collapse-named.md](auto-collapse-named.md) | Collapse to 50 clades by size or preferring named clades, on GTDB 190k and OTL 100k: how many rows are named, with pictures (#57) |
 | [ete-ideas.md](ete-ideas.md) | Ideas from the ETE toolkit worth reimplementing |

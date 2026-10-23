@@ -1,6 +1,7 @@
 // The name of a clade, shared by every place the viewer names one (the legend, the node menu title, the default tooltip, the live-region
 // announcement), so they all apply the same rule: an internal node's label with its support value taken off, shown as the app's
-// `formatLabel` shows a tip. A tip is named by its own label, whole.
+// `formatLabel` shows a tip. A tip is named by its own label, whole. Also the label of a collapsed clade (`formatCollapsedLabel`) and
+// its highest named descendants (`namedDescendants`), for summaries of collapsed clades.
 
 import type { TreeSnapshot } from './types.ts';
 
@@ -39,4 +40,73 @@ export function cladeName(
   const raw = tree.childCount[row] === 0 ? label : opts.cladeLabel ? opts.cladeLabel(node, tree) : internalName(label);
   const s = raw ? opts.formatLabel(raw).trim() : '';
   return s === '' ? null : s;
+}
+
+/** The default `formatCollapsedLabel`: 'Firmicutes · 12,345 tips', or '12,345 tips' without a name. */
+export function defaultFormatCollapsedLabel(name: string | null, tips: number): string {
+  const n = `${tips.toLocaleString('en')} ${tips === 1 ? 'tip' : 'tips'}`;
+  return name ? `${name} · ${n}` : n;
+}
+
+/** A named descendant of a clade, as {@link namedDescendants} finds it. */
+export interface NamedDescendant {
+  /** Preorder id in the full tree, as the public API speaks. */
+  node: number;
+  /** Its display name, as {@link cladeName} gives it. */
+  name: string;
+  /** Its number of tips. */
+  tips: number;
+}
+
+/**
+ * The highest named descendants of the internal node at snapshot row `row`, to summarise a collapsed clade: the shallowest internal
+ * nodes below it that have a name (by {@link cladeName}, so `cladeLabel` decides, and support values and the names an app hides do
+ * not count), found breadth-first and in preorder within a level. Below a named node it does not look further. It stops after `max`
+ * names (default 5) or after visiting `maxVisits` nodes (default 2,000), so a clade of a million tips costs no more than a small one;
+ * `more` is true when it stopped before seeing every place a name could be (also at the rows of a partial source that are not loaded).
+ * The clade's own name is not included. Tips are not names here. Cost: O(`maxVisits`), with one queue of that size; `names` holds at
+ * most `max` entries.
+ */
+export function namedDescendants(
+  tree: TreeSnapshot,
+  row: number,
+  opts: { formatLabel: (s: string) => string; cladeLabel?: CladeLabelFn | null },
+  limits: { max?: number; maxVisits?: number } = {},
+): { names: NamedDescendant[]; more: boolean } {
+  const max = Math.max(0, Math.floor(limits.max ?? 5));
+  const cap = Math.max(1, Math.floor(limits.maxVisits ?? 2000));
+  const names: NamedDescendant[] = [];
+  if (row < 0 || row >= tree.nodeCount || tree.childCount[row] === 0) return { names, more: false };
+  const { firstChild, nextSibling, childCount, leafStart, leafEnd, stub } = tree;
+  // the internal nodes still to look at, in breadth-first order (a ring is not needed: at most `cap` are ever queued)
+  const queue = new Int32Array(Math.min(cap, tree.nodeCount));
+  let head = 0;
+  let tail = 0;
+  let more = false;
+  const enqueueChildren = (v: number): void => {
+    if (stub !== null && stub[v] === 1) {
+      more = true; // its rows are not loaded
+      return;
+    }
+    for (let c = firstChild[v]; c >= 0; c = nextSibling[c]) {
+      if (childCount[c] === 0) continue;
+      if (tail === queue.length) {
+        more = true;
+        return;
+      }
+      queue[tail++] = c;
+    }
+  };
+  enqueueChildren(row);
+  while (head < tail) {
+    if (names.length >= max) {
+      more = true;
+      break;
+    }
+    const v = queue[head++];
+    const name = cladeName(tree, v, opts);
+    if (name !== null) names.push({ node: tree.globalId === null ? v : tree.globalId[v], name, tips: leafEnd[v] - leafStart[v] });
+    else enqueueChildren(v);
+  }
+  return { names, more };
 }

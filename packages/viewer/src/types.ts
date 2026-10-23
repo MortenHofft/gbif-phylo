@@ -6,7 +6,7 @@
 // sizes and widths in px, opacities, font family and style, all settable as `--phylo-*`. Put a new setting by that test; the rule and
 // the exceptions are in docs/api.md ("Theme or option").
 
-import type { CladeLabelFn } from './clade-name.ts';
+import { defaultFormatCollapsedLabel, type CladeLabelFn } from './clade-name.ts';
 import { RECT_MAX_VIEW_W } from './constants.ts';
 import type { FontRelative, TreeWidth } from './sizes.ts';
 import { defaultFormatNodeLabel, type NodeLabelKind, type NodeLabelsOption } from './node-label.ts';
@@ -408,6 +408,12 @@ export interface ViewerOptions {
    * The name goes through `formatLabel`. null = the node's label without its support value. Hide synthetic names or look names up here.
    */
   cladeLabel: CladeLabelFn | null;
+  /**
+   * The label of a collapsed clade (`setCollapsed`), drawn at the end of its triangle and read out in the screen reader list:
+   * `(name, tips)`, with `name` the clade's name as `cladeLabel` and `formatLabel` give it (null for none) and `tips` its number of tips.
+   * Default `defaultFormatCollapsedLabel`: 'Firmicutes · 12,345 tips', or '12,345 tips' without a name.
+   */
+  formatCollapsedLabel: (name: string | null, tips: number) => string;
   tipHref: ((tipId: string) => string) | null;
   ariaLabel: string;
   /** Create the 2D contexts with willReadFrequently (CPU-backed canvas). Read at construction only. */
@@ -469,6 +475,7 @@ export const DEFAULT_OPTIONS: ViewerOptions = {
   alignStyle: 'residues',
   formatLabel: (s) => s.replace(/_/g, ' '),
   cladeLabel: null,
+  formatCollapsedLabel: defaultFormatCollapsedLabel,
   tipHref: null,
   ariaLabel: 'Phylogenetic tree',
   softwareCanvas: false,

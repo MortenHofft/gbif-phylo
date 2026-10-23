@@ -929,8 +929,11 @@ export class TreeViewer {
     const lengthsChanged = p.branchLengths !== undefined && p.branchLengths !== o.branchLengths;
     const layoutChanged = p.layout !== undefined && p.layout !== o.layout;
     const refit = lengthsChanged || layoutChanged || refitsView(p, o);
-    // the pooled label elements take their text (formatLabel) and link (tipHref) when they are created, so a change of either rebuilds them
-    const labelsChanged = (p.tipHref !== undefined && p.tipHref !== o.tipHref) || (p.formatLabel !== undefined && p.formatLabel !== o.formatLabel);
+    // the pooled label elements take their text (formatLabel, and for collapsed clades cladeLabel and formatCollapsedLabel) and link
+    // (tipHref) when they are created, so a change of any rebuilds them
+    const labelsChanged = (['tipHref', 'formatLabel', 'cladeLabel', 'formatCollapsedLabel'] as const).some(
+      (k) => p[k] !== undefined && p[k] !== o[k],
+    );
     this.opts = { ...o, ...p };
     if (layoutChanged || lengthsChanged) this.minPxHint = 0;
     if (p.dprCap !== undefined && p.dprCap !== o.dprCap) this.setSize(this.W, this.H);
@@ -1509,10 +1512,10 @@ export class TreeViewer {
     this.zoomToRow(row, animate);
   }
 
-  /** The label of a collapsed clade (row of the snapshot): its name, else its size. */
+  /** The label of a collapsed clade (row of the snapshot): `formatCollapsedLabel` of its name and size. */
   private cladeText(row: number): string {
     const t = this.tree;
-    return cladeName(t, row, this.opts) ?? `${(t.leafEnd[row] - t.leafStart[row]).toLocaleString('en')} tips`;
+    return this.opts.formatCollapsedLabel(cladeName(t, row, this.opts), t.leafEnd[row] - t.leafStart[row]);
   }
 
   /** zoomToNode for a row of the snapshot (a hit's node), which with a partial source is not the node id of the public API. */

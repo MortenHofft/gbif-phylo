@@ -14,7 +14,7 @@
 // node labels (support, length, support as percent); aligned labels (one x for the label anchors, a click on one opens the menu; in
 // radial one distance from the root, toBlob equal to the screen); the alignment track (a 'fill' column) and its legend; the overview and legend controls; one action colour (--ex-primary) for active toggles, active tools and the hover box, in light and dark, and --ex-hover-tip for the box alone (#74); dark mode reaches
 // the canvas; the resize handle; one tree from each group of the playground's catalogue, a large one included; the drill-down on GTDB 190k
-// (#57: Overview: 50 clades, a click expands a collapsed clade in place, Show only jumps into one, Back returns).
+// (#57: Collapse to 50 clades, a click expands a collapsed clade in place, Show only jumps into one, Back returns).
 /* global __v, __order, __tipAt, __clade, __inView, __stem -- helpers the page gets from HELPERS below, used inside page.evaluate */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -136,6 +136,8 @@ await page.addInitScript(() => {
   const ft = CanvasRenderingContext2D.prototype.fillText;
   CanvasRenderingContext2D.prototype.fillText = function (text, ...rest) {
     if (/^(time before tips|distance from root)/.test(String(text))) window.__axis = String(text);
+    // the labels of collapsed clades (#57): 'Name · 12,345 tips' or '12,345 tips'
+    if (/^(.+ · )?[\d,]+ tips?$/.test(String(text))) (window.__cladeLabels ??= new Set()).add(String(text));
     // node labels are the only text drawn with the 'bottom' baseline in the rectangular layout (the radial scale bar has it too)
     if (this.textBaseline === 'bottom') {
       (window.__nodeTexts ??= []).push(String(text));
@@ -2233,7 +2235,7 @@ await open('edge-internal-support');
   const remote = await page.locator('.page-head select option[value="otl-2m-full"]').count();
   ok(remote === 1, 'the 2.4M-tip tree with a remote URL is on offer');
 }
-// Drill-down (#57) on a large tree: Overview collapses to about 50 rows, a click on a collapsed clade expands it in place (its children
+// Drill-down (#57) on a large tree: Collapse to 50 clades gives about 50 rows, a click on a collapsed clade expands it in place (its children
 // in, with an overview of about 20 rows inside), Show only in its menu jumps into it with an overview there, and Back returns
 const drillDown = async (tips) => {
   const collapsedNodes = () =>
@@ -2256,15 +2258,42 @@ const drillDown = async (tips) => {
       },
       [skip],
     );
-  await btn('Overview: 50 clades').click();
+  // a collapsed clade is named when its label has a name once the support is off (GTDB: '98.0:p__Firmicutes'; '95' is none)
+  const namedCollapsed = () =>
+    ev(() => {
+      const t = __v().getTree();
+      const name = (l) => {
+        const m = /^\s*[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?\s*(?::(.*))?$/s.exec(l);
+        return (m ? (m[1] ?? '') : l).trim();
+      };
+      let n = 0;
+      for (let i = 1; i < t.nodeCount; i++) if (__v().layout.collapsed?.[i] && name(t.labels[i]) !== '') n++;
+      return n;
+    });
+  await ev(() => (window.__cladeLabels = new Set()));
+  await btn('Collapse to 50 clades').click();
   await page.waitForTimeout(400);
   const r0 = await rows();
   const c0 = await collapsedNodes();
-  ok(r0 <= 50 && r0 >= 40 && (await tipCount()) === tips, `Overview: ${r0} rows (at most 50), ${c0.length} collapsed clades, all ${tips} tips kept`);
+  ok(
+    r0 <= 50 && r0 >= 40 && (await tipCount()) === tips,
+    `Collapse to 50 clades: ${r0} rows (at most 50), ${c0.length} collapsed clades, all ${tips} tips kept`,
+  );
+  const labels = await ev(() => [...(window.__cladeLabels ?? [])]);
+  ok(
+    labels.some((l) => / · [\d,]+ tips$/.test(l)) && labels.some((l) => /^[\d,]+ tips$/.test(l)),
+    `collapsed clades are labelled 'Name · N tips' or 'N tips': ${labels.slice(0, 3).join(' | ')}`,
+  );
   const big = await largest([]);
   await page.mouse.move(big.tri.x, big.tri.y);
   await page.waitForTimeout(300);
   ok((await page.locator('.ex-tip--menu').innerText()).startsWith('Click to expand'), 'the hover box on a collapsed clade says a click expands it');
+  const clade = await page.locator('.ex-tip-clade').innerText();
+  const insideBox = (await page.locator('.ex-tip-inside').count()) ? await page.locator('.ex-tip-inside').innerText() : '';
+  ok(
+    clade.endsWith(`${big.tips.toLocaleString('en')} tips`) && /^Inside\n\S/.test(insideBox),
+    `and gives its label and the highest named clades inside it: "${clade}", "${insideBox.replace(/\n/g, ' | ').slice(0, 70)}…"`,
+  );
   await click(big.tri);
   const r1 = await rows();
   const c1 = await collapsedNodes();
@@ -2286,6 +2315,15 @@ const drillDown = async (tips) => {
   );
   // jump into another collapsed clade: Show only from its menu (a click on its branch), with an overview inside; Back returns
   const other = await largest([big.node]);
+  // its Info panel lists the named clades inside it
+  await openMenu(await ev((n) => __stem(n), other.node));
+  await act('info');
+  const infoNames = await page.locator('.ex-info-inside li').allInnerTexts();
+  ok(
+    (await page.locator('.ex-info-rows dt', { hasText: 'Tips' }).count()) === 1 && infoNames.length > 0,
+    `the Info panel of a collapsed clade lists the named clades inside it (${infoNames.length}: ${infoNames.slice(0, 2).join(', ').replace(/\n/g, ' ')})`,
+  );
+  await page.locator('.ex-info-head button').click();
   await openMenu(await ev((n) => __stem(n), other.node));
   await act('subtree');
   await page.waitForTimeout(400);
@@ -2294,10 +2332,10 @@ const drillDown = async (tips) => {
     (await tipCount()) === other.tips && r2 <= 50 && r2 >= 20,
     `Show only jumps into a collapsed clade of ${other.tips} tips, with its overview: ${r2} rows`,
   );
-  // Overview inside the clade shown keeps it collapsed outside, so Back still returns to the view before
-  await btn('Overview: 50 clades').click();
+  // Collapse inside the clade shown keeps it collapsed outside, so Back still returns to the view before
+  await btn('Collapse to 50 clades').click();
   await page.waitForTimeout(400);
-  ok((await rows()) === r2, `Overview inside it gives the same overview (${await rows()} rows)`);
+  ok((await rows()) === r2, `Collapse to 50 clades inside it gives the same overview (${await rows()} rows)`);
   await btn('Back').click();
   await page.waitForTimeout(400);
   ok(
@@ -2318,6 +2356,23 @@ const drillDown = async (tips) => {
   await openMenu(whole.stem);
   await act('expand');
   ok((await rows()) === r1 - 1 + whole.tips, `Expand in the menu opens a clade of ${whole.tips} tips whole (${r1} → ${await rows()} rows)`);
+  await btn('Expand all').click();
+  await page.waitForTimeout(300);
+  // Prefer named (by: 'named', an experiment): the budget holds, and more of the collapsed rows are named clades
+  await btn('Collapse to 50 clades').click();
+  await page.waitForTimeout(300);
+  const bySize = await namedCollapsed();
+  const toggle = page.locator('.ex-outer button[aria-pressed]', { hasText: 'Prefer named' });
+  await toggle.click();
+  await btn('Collapse to 50 clades').click();
+  await page.waitForTimeout(400);
+  const rn = await rows();
+  const byNamed = await namedCollapsed();
+  ok(
+    (await toggle.getAttribute('aria-pressed')) === 'true' && rn <= 50 && byNamed > bySize,
+    `Prefer named: ${rn} rows, ${byNamed} of ${(await collapsedNodes()).length} collapsed clades named (by size ${bySize})`,
+  );
+  await toggle.click();
   await btn('Expand all').click();
   await page.waitForTimeout(300);
 };

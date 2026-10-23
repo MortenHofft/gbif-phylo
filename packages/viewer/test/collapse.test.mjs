@@ -275,7 +275,7 @@ test('the label of a collapsed clade is its name (or its size) and a click on it
     .ctx()
     .calls('fillText')
     .map((e) => e[1]);
-  assert.ok(texts.includes('x'), 'its name');
+  assert.ok(texts.includes('x · 2 tips'), 'its name and size');
   assert.ok(texts.includes('2 tips'), 'else its size');
   assert.ok(texts.includes('f'));
   const L = v.labels;
@@ -284,6 +284,30 @@ test('the label of a collapsed clade is its name (or its size) and a click on it
   const h = v.hitTest(L.x[k] + 2, L.y[k]);
   assert.deepEqual(h, { node: parentOf(t, 'a'), kind: 'summary' });
   assert.equal(v.overlay.layer.children.length, 1, 'only the tip f has a DOM anchor; a collapsed clade is reached by its triangle');
+});
+
+test('formatCollapsedLabel makes the label of a collapsed clade from its name (cladeLabel, formatLabel) and size', async () => {
+  const m = await make('((a,b)x_1,(c,d)mrca9,f)r;');
+  m.env.flush();
+  const v = m.viewer;
+  const t = v.tree;
+  v.setCollapsed([parentOf(t, 'a'), parentOf(t, 'c')]);
+  const texts = () => {
+    m.ctx().reset();
+    m.env.flush();
+    return m
+      .ctx()
+      .calls('fillText')
+      .map((e) => e[1]);
+  };
+  const before = texts();
+  assert.ok(before.includes('x 1 · 2 tips') && before.includes('mrca9 · 2 tips'), before.join('|'));
+  v.setOptions({
+    formatCollapsedLabel: (name, tips) => `[${name ?? '-'}|${tips}]`,
+    cladeLabel: (node, tr) => (tr.labels[tr.toLocal(node)] === 'mrca9' ? null : tr.labels[tr.toLocal(node)]),
+  });
+  const after = texts();
+  assert.ok(after.includes('[x 1|2]') && after.includes('[-|2]'), after.join('|'));
 });
 
 test('a dated tree keeps its time axis with a collapsed clade, and the triangle ends at the clade tips', async () => {
@@ -581,7 +605,7 @@ test('two highlighted tips inside one collapsed clade give one band and one ring
   let bold = false;
   for (const e of m.ctx().log) {
     if (e[0] === 'font=') bold = /600/.test(e[1]);
-    else if (e[0] === 'fillText' && e[1] === 'x') boldFor = bold;
+    else if (e[0] === 'fillText' && e[1] === 'x · 2 tips') boldFor = bold;
   }
   assert.equal(boldFor, true, 'the label of the clade that holds a highlight');
 });
@@ -600,7 +624,7 @@ test('zoomToNode of a node inside a collapsed clade frames the clade; the screen
   assert.ok(w.y0 <= row && w.y1 >= row + 1, 'the clade row is in view');
   v.overlay.updateList(v.list, v.tree, v.opts.formatLabel, v.L.collapsed, (r) => v.cladeText(r));
   const texts = v.overlay.srList.children.map((c) => c.textContent);
-  assert.ok(texts.includes('c10, collapsed'), texts.slice(0, 4).join('|'));
+  assert.ok(texts.includes('c10 · 2 tips, collapsed'), texts.slice(0, 4).join('|'));
   v.setActive(c10);
   assert.match(v.overlay.live.textContent, /collapsed$/);
 });

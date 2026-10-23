@@ -110,7 +110,7 @@ test('dim: the triangle of a collapsed clade is dimmed unless one of its tips ma
   assert.ok(fills.includes(so), 'x, a tip of it matches');
   assert.ok(fills.includes(so * DIM), 'y');
   const labels = alphas(ctx(), 'fillText')
-    .filter((x) => x.arg === 'x' || x.arg === 'y')
+    .filter((x) => x.arg === 'x · 2 tips' || x.arg === 'y · 2 tips')
     .map((x) => x.alpha);
   assert.deepEqual(labels, [1, DIM], 'the labels of the clades follow their triangles');
 });

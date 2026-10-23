@@ -3,7 +3,11 @@
 // a viewer collapses (`viewer.setCollapsed`); the tree is not changed.
 
 import { checkNode } from './draft.ts';
+import { splitInternalLabel } from './labels.ts';
 import type { TreeInput } from './types.ts';
+
+/** Added to the key of an unnamed clade with `by: 'named'`: more than any tip count (typed-array ids are below 2^31), and exact in a double. */
+const UNNAMED = 2 ** 32;
 
 export interface AutoCollapseOptions {
   /** At most this many rows: the tips shown plus the collapsed clades. At least 1. */
@@ -12,6 +16,19 @@ export interface AutoCollapseOptions {
   root?: number;
   /** A clade with fewer tips than this is never collapsed: it opens whole with its parent, and counts its tips as rows. Default 1. */
   minTips?: number;
+  /**
+   * Which collapsed clade opens first. 'size' (default): the one with the most tips. 'named' (an experiment, #57): every unnamed clade
+   * before any named one, whatever its size, as an unnamed clade is not a good place to stop; among the named, and among the unnamed, the
+   * most tips first. So the overview tends to stop at named clades (taxa). The budget holds as with 'size'; on a tree without names
+   * (or without unnamed clades) the two are the same.
+   */
+  by?: 'size' | 'named';
+  /**
+   * With `by: 'named'`: whether the internal node `node` is named. Default: its label has a name once a support value is taken off
+   * (`splitInternalLabel(label).name !== ''`). Pass the app's own rule to leave out synthetic names (Open Tree's `mrcaott…`), e.g. from
+   * the viewer's `cladeName`. Called at most once per clade that becomes a candidate.
+   */
+  isNamed?: (node: number) => boolean;
 }
 
 /**
@@ -19,8 +36,9 @@ export interface AutoCollapseOptions {
  * Starts with `root` collapsed, then repeatedly opens the collapsed clade with the most tips (ties: the first in preorder), replacing
  * it by its children, as long as the rows stay within `maxRows`. A clade whose children don't fit (a wide polytomy) stays collapsed,
  * and smaller clades are still opened. Returns node ids in preorder, none nested: `[]` when the whole clade fits open, `[root]` when
- * not even its children fit (also when `root` has fewer than `minTips` tips: the budget comes first). Iterative, with a max-heap of the collapsed clades: the cost grows with `maxRows` and the children of the
- * clades opened, not with the size of the tree.
+ * not even its children fit (also when `root` has fewer than `minTips` tips: the budget comes first). With `by: 'named'` the unnamed
+ * clades open before the named ones (see {@link AutoCollapseOptions.by}). Iterative, with a max-heap of the collapsed clades: the cost
+ * grows with `maxRows` and the children of the clades opened, not with the size of the tree.
  */
 export function autoCollapse(t: TreeInput, o: AutoCollapseOptions): number[] {
   const root = o.root ?? 0;
@@ -30,37 +48,47 @@ export function autoCollapse(t: TreeInput, o: AutoCollapseOptions): number[] {
   const minTips = o.minTips ?? 1;
   const { leafStart, leafEnd, childCount, firstChild, nextSibling } = t;
   if (childCount[root] === 0 || leafEnd[root] - leafStart[root] <= max) return [];
-  // the heap holds collapsed clades that may open; each is a row, so there are never more than `max`
+  const byName = o.by === 'named';
+  if (o.by !== undefined && o.by !== 'size' && !byName) throw new RangeError(`autoCollapse: by must be 'size' or 'named' (got ${String(o.by)})`);
+  const isNamed = o.isNamed ?? ((v: number) => splitInternalLabel(t.labels[v] ?? '').name !== '');
+  // the heap holds collapsed clades that may open, with their keys (tips, plus UNNAMED for an unnamed clade with by: 'named'); each is
+  // a row, so there are never more than `max`
   const heap = new Int32Array(max);
+  const keys = new Float64Array(max);
   let n = 0;
-  // a before b: more tips, then earlier in preorder
-  const above = (a: number, b: number) => {
-    const d = leafEnd[a] - leafStart[a] - (leafEnd[b] - leafStart[b]);
-    return d > 0 || (d === 0 && a < b);
-  };
+  // a before b: a larger key, then earlier in preorder
+  const above = (ka: number, a: number, kb: number, b: number) => ka > kb || (ka === kb && a < b);
   const push = (v: number) => {
+    const k = leafEnd[v] - leafStart[v] + (byName && !isNamed(v) ? UNNAMED : 0);
     let i = n++;
     while (i > 0) {
       const p = (i - 1) >> 1;
-      if (!above(v, heap[p])) break;
+      if (!above(k, v, keys[p], heap[p])) break;
       heap[i] = heap[p];
+      keys[i] = keys[p];
       i = p;
     }
     heap[i] = v;
+    keys[i] = k;
   };
   const pop = () => {
     const top = heap[0];
     const last = heap[--n];
+    const lastKey = keys[n];
     let i = 0;
     for (;;) {
       let c = 2 * i + 1;
       if (c >= n) break;
-      if (c + 1 < n && above(heap[c + 1], heap[c])) c++;
-      if (!above(heap[c], last)) break;
+      if (c + 1 < n && above(keys[c + 1], heap[c + 1], keys[c], heap[c])) c++;
+      if (!above(keys[c], heap[c], lastKey, last)) break;
       heap[i] = heap[c];
+      keys[i] = keys[c];
       i = c;
     }
-    if (n > 0) heap[i] = last;
+    if (n > 0) {
+      heap[i] = last;
+      keys[i] = lastKey;
+    }
     return top;
   };
   const opensWhole = (v: number) => childCount[v] === 0 || leafEnd[v] - leafStart[v] < minTips; // rows: its tips
@@ -87,7 +115,7 @@ export function autoCollapse(t: TreeInput, o: AutoCollapseOptions): number[] {
  * clade, `root` included, are dropped and {@link autoCollapse}'s are added, so `root` itself is open: for a collapsed clade that is
  * "expand in place" (its largest subclades open, the rest collapsed, within `maxRows`); for the clade shown alone it is the overview
  * inside it. When not even the children of `root` fit in `maxRows` (a wide polytomy), each child that is a clade of at least `minTips`
- * tips is collapsed instead, one row each. Ids outside the clade are kept as they are. Returns node ids in preorder, without duplicates; the input is not changed.
+ * tips is collapsed instead, one row each. Ids outside the clade are kept as they are. `by` and `isNamed` are passed on to `autoCollapse`. Returns node ids in preorder, without duplicates; the input is not changed.
  */
 export function mergeAutoCollapse(t: TreeInput, collapsed: readonly number[], o: AutoCollapseOptions): number[] {
   const root = o.root ?? 0;

@@ -247,7 +247,7 @@ for (const layout of ['rectangular', 'radial']) {
     assert.ok(stripes(m.ctx()).length > 0, 'collapsed clade X is striped; Y is expanded');
     assert.equal(filled(m.ctx(), STRIPE, m.viewer.theme.summaryOpacity), 1, 'over one background');
     assert.ok(
-      m.ctx().log.some((e) => e[0] === 'fillText' && e[1] === 'X'),
+      m.ctx().log.some((e) => e[0] === 'fillText' && e[1] === 'X · 20 tips'),
       'the label is drawn',
     );
   });

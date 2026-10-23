@@ -22,7 +22,7 @@ export interface Scene {
   alignLabels: boolean; // the option; it acts only in a phylogram (see alignedX and alignedR)
   labelRoom: number; // radial, aligned labels: the room (px) the text keeps in view when the circle is pinned (see alignedR)
   format: (id: string) => string;
-  /** The label of a collapsed clade (node = row of the snapshot): its name, else its size. null: collapsed clades get no label. */
+  /** The label of a collapsed clade (node = row of the snapshot): `formatCollapsedLabel` of its name and size. null: collapsed clades get no label. */
   cladeText: ((node: number) => string) | null;
   nodeLabels: NodeLabelsOption; // the option
   formatNode: (value: number, kind: NodeLabelKind) => string; // formatNodeLabel

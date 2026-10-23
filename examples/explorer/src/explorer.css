@@ -1115,3 +1115,55 @@ body {
     transform: translateY(-4px) scale(0.97);
   }
 }
+
+/* the hover box of a collapsed clade (#57): what a click does, its label, and the highest named clades inside it */
+.ex-tip--clade {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  white-space: normal;
+  max-width: 320px;
+}
+.ex-tip-clade {
+  color: var(--ex-text);
+  font-weight: 600;
+}
+.ex-tip-inside {
+  display: flex;
+  flex-direction: column;
+  color: var(--ex-text);
+  font-weight: 400;
+}
+.ex-tip-inside-head {
+  color: var(--ex-muted);
+}
+
+/* the Info panel of a collapsed clade: its highest named clades, with their tips */
+.ex-info-inside {
+  padding: 0 12px 8px;
+  font-size: 11.5px;
+}
+.ex-info-inside-head {
+  color: var(--ex-muted);
+  margin-bottom: 4px;
+}
+.ex-info-inside ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 180px;
+  overflow-y: auto;
+}
+.ex-info-inside li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 1px 0;
+}
+.ex-info-inside-tips {
+  color: var(--ex-muted);
+  font-variant-numeric: tabular-nums;
+}
+.ex-info-inside-more {
+  color: var(--ex-muted);
+}

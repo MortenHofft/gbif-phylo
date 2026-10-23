@@ -186,7 +186,7 @@ test('a collapsed clade is labelled in the column, with a leader from the end of
     .ctx()
     .calls('fillText')
     .map((e) => e[1]);
-  assert.ok(texts.includes('x'), 'labelled with its name');
+  assert.ok(texts.includes('x · 2 tips'), 'labelled with its name');
   assert.ok(!texts.includes('a') && !texts.includes('b'), 'its tips have no labels');
   const xs = Object.fromEntries(
     m
@@ -194,7 +194,7 @@ test('a collapsed clade is labelled in the column, with a leader from the end of
       .calls('fillText')
       .map((e) => [e[1], e[2]]),
   );
-  assert.equal(xs.x, xs.c, 'the label shares the column with the tips');
+  assert.equal(xs['x · 2 tips'], xs.c, 'the label shares the column with the tips');
 });
 
 /** A caterpillar-free comb of n tips with different lengths. */

@@ -217,4 +217,9 @@ test('mergeAutoCollapse replaces the collapsed clades inside the clade, and a wi
   const merged = mergeAutoCollapse(w, [S], { root: S, maxRows: 20 });
   assert.equal(merged.length, 30);
   assert.ok(merged.every((v) => w.parent[v] === S && w.childCount[v] === 2));
+  // minTips: a child clade smaller than it is left open there too
+  const m = new TreeModel(parseNewick(`((${Array.from({ length: 30 }, (_, i) => `(p${i},q${i})`).join(',')},(u,v,w)),z);`));
+  const P = m.mrcaOf([m.tipIndex('p0'), m.tipIndex('u')]);
+  const U = m.mrcaOf([m.tipIndex('u'), m.tipIndex('w')]);
+  assert.deepEqual(mergeAutoCollapse(m, [P], { root: P, maxRows: 20, minTips: 3 }), [U]);
 });

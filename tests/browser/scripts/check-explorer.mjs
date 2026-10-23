@@ -2294,12 +2294,30 @@ const drillDown = async (tips) => {
     (await tipCount()) === other.tips && r2 <= 50 && r2 >= 20,
     `Show only jumps into a collapsed clade of ${other.tips} tips, with its overview: ${r2} rows`,
   );
+  // Overview inside the clade shown keeps it collapsed outside, so Back still returns to the view before
+  await btn('Overview: 50 clades').click();
+  await page.waitForTimeout(400);
+  ok((await rows()) === r2, `Overview inside it gives the same overview (${await rows()} rows)`);
   await btn('Back').click();
   await page.waitForTimeout(400);
   ok(
     (await tipCount()) === tips && (await rows()) === r1 && (await ev((n) => __v().layout.collapsed?.[n] === 1, other.node)),
     `Back returns to the tree as it was (${await rows()} rows, the clade jumped into collapsed again)`,
   );
+  // Expand in the menu opens a collapsed clade whole, unlike the click (not the clade jumped into: the clades collapsed inside it stay)
+  const whole = await ev((skip) => {
+    const t = __v().getTree();
+    let best = null;
+    for (let i = 1; i < t.nodeCount; i++) {
+      if (i === skip || !__v().layout.collapsed?.[i] || (best && t.leafEnd[i] - t.leafStart[i] <= best.tips)) continue;
+      const stem = __stem(i);
+      if (stem) best = { node: i, tips: t.leafEnd[i] - t.leafStart[i], stem };
+    }
+    return best;
+  }, other.node);
+  await openMenu(whole.stem);
+  await act('expand');
+  ok((await rows()) === r1 - 1 + whole.tips, `Expand in the menu opens a clade of ${whole.tips} tips whole (${r1} → ${await rows()} rows)`);
   await btn('Expand all').click();
   await page.waitForTimeout(300);
 };

@@ -651,6 +651,11 @@ export function Explorer({
   const overviewOfShown = () => {
     const root = Math.max(0, ops.focusedNode(focus));
     const next = ops.mergeAutoCollapse(tree, collapsed, { root, maxRows: OVERVIEW_ROWS });
+    // the clade shown alone stays collapsed in the view around it (as jumpInto leaves it), so Back returns to that view
+    if (root > 0 && collapsed.includes(root)) {
+      next.push(root);
+      next.sort((a, b) => a - b);
+    }
     setCollapsed(next);
     deselect();
     const n = next.filter((v) => v > root && v < tree.subtreeEnd[root]).length;
@@ -760,7 +765,7 @@ export function Explorer({
     const expand: NodeMenuItem = {
       id: 'expand',
       label: 'Expand',
-      onSelect: () => expandInPlace(v),
+      onSelect: () => setCollapsed((cs) => cs.filter((c) => c !== v)), // the whole clade, unlike a click on it (expandInPlace)
     };
     const collapse: NodeMenuItem = {
       id: 'collapse',

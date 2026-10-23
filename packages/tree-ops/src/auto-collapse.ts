@@ -48,9 +48,7 @@ export function autoCollapse(t: TreeInput, o: AutoCollapseOptions): number[] {
   const minTips = o.minTips ?? 1;
   const { leafStart, leafEnd, childCount, firstChild, nextSibling } = t;
   if (childCount[root] === 0 || leafEnd[root] - leafStart[root] <= max) return [];
-  const byName = o.by === 'named';
-  if (o.by !== undefined && o.by !== 'size' && !byName) throw new RangeError(`autoCollapse: by must be 'size' or 'named' (got ${String(o.by)})`);
-  const isNamed = o.isNamed ?? ((v: number) => splitInternalLabel(t.labels[v] ?? '').name !== '');
+  const keyOf = heapKey(t, o);
   // the heap holds collapsed clades that may open, with their keys (tips, plus UNNAMED for an unnamed clade with by: 'named'); each is
   // a row, so there are never more than `max`
   const heap = new Int32Array(max);
@@ -59,7 +57,7 @@ export function autoCollapse(t: TreeInput, o: AutoCollapseOptions): number[] {
   // a before b: a larger key, then earlier in preorder
   const above = (ka: number, a: number, kb: number, b: number) => ka > kb || (ka === kb && a < b);
   const push = (v: number) => {
-    const k = leafEnd[v] - leafStart[v] + (byName && !isNamed(v) ? UNNAMED : 0);
+    const k = keyOf(v);
     let i = n++;
     while (i > 0) {
       const p = (i - 1) >> 1;
@@ -108,6 +106,15 @@ export function autoCollapse(t: TreeInput, o: AutoCollapseOptions): number[] {
     for (let c = firstChild[v]; c >= 0; c = nextSibling[c]) if (!opensWhole(c)) push(c);
   }
   return out.sort((a, b) => a - b);
+}
+
+/** The heap key of a clade: its tips, plus UNNAMED for an unnamed clade with `by: 'named'`. Checks `by`. */
+function heapKey(t: TreeInput, o: AutoCollapseOptions): (v: number) => number {
+  const { leafStart, leafEnd } = t;
+  if (o.by === undefined || o.by === 'size') return (v) => leafEnd[v] - leafStart[v];
+  if (o.by !== 'named') throw new RangeError(`autoCollapse: by must be 'size' or 'named' (got ${String(o.by)})`);
+  const isNamed = o.isNamed ?? ((v: number) => splitInternalLabel(t.labels[v] ?? '').name !== '');
+  return (v) => leafEnd[v] - leafStart[v] + (isNamed(v) ? 0 : UNNAMED);
 }
 
 /**

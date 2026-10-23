@@ -50,13 +50,16 @@ OTL), and on GTDB a consistent rank (phyla), but the unnamed rows that are left 
 
 Explorer from the branch `workshift/views-and-drill-down-57-summaries`, built and served with `vite preview`, headless Chromium (Playwright)
 at 1400 x 1000. For each tree: open `/?tree=gtdb-190k-bacteria` (or `otl-100k-vertebrata`), for the named run press **Prefer named**, press
-**Collapse to 50 clades**, then count in the page:
+**Collapse to 50 clades**, then count in the page (every figure in the table comes from this):
 
 ```js
 const v = window.__explorer(), t = v.getTree();
 const name = (l) => { const m = /^\s*[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?\s*(?::(.*))?$/s.exec(l); const n = (m ? (m[1] ?? '') : l).trim(); return /^mrcaott\d+ott\d+$/.test(n) ? '' : n; };
 const ids = []; for (let i = 1; i < t.nodeCount; i++) if (v.layout.collapsed?.[i]) ids.push(i);
-({ rows: v.layout.rows, collapsed: ids.length, named: ids.filter((i) => name(t.labels[i]) !== '').length });
+const named = ids.map((i) => name(t.labels[i])).filter((n) => n !== '');
+// GTDB: the rank of each named row, from the first prefix of its name (p__, c__, o__, ...)
+const ranks = {}; for (const n of named) { const r = /^([a-z])__/.exec(n)?.[1]; if (r) ranks[r] = (ranks[r] ?? 0) + 1; }
+({ rows: v.layout.rows, collapsed: ids.length, tips: v.layout.rows - ids.length, named: named.length, ranks });
 ```
 
 The pictures are the explorer pane, scaled to 75%. `tests/browser/scripts/check-explorer.mjs` asserts the GTDB case: at most 50 rows, and

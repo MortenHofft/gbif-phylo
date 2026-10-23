@@ -62,7 +62,7 @@ export interface NamedDescendant {
  * The highest named descendants of the internal node at snapshot row `row`, to summarise a collapsed clade: the shallowest internal
  * nodes below it that have a name (by {@link cladeName}, so `cladeLabel` decides, and support values and the names an app hides do
  * not count), found breadth-first and in preorder within a level. Below a named node it does not look further. It stops after `max`
- * names (default 5) or after visiting `maxVisits` nodes (default 2,000), so a clade of a million tips costs no more than a small one;
+ * names (default 5) or after looking at `maxVisits` children (default 2,000; tips count too, so a wide polytomy of tips is cut there), so a clade of a million tips costs no more than a small one;
  * `more` is true when it stopped before seeing every place a name could be (also at the rows of a partial source that are not loaded).
  * The clade's own name is not included. Tips are not names here. Cost: O(`maxVisits`), with one queue of that size; `names` holds at
  * most `max` entries.
@@ -82,6 +82,7 @@ export function namedDescendants(
   const queue = new Int32Array(Math.min(cap, tree.nodeCount));
   let head = 0;
   let tail = 0;
+  let seen = 0; // children looked at, tips included: a wide polytomy of tips costs `cap`, not its degree
   let more = false;
   const enqueueChildren = (v: number): void => {
     if (stub !== null && stub[v] === 1) {
@@ -89,12 +90,12 @@ export function namedDescendants(
       return;
     }
     for (let c = firstChild[v]; c >= 0; c = nextSibling[c]) {
-      if (childCount[c] === 0) continue;
-      if (tail === queue.length) {
+      if (seen === cap) {
         more = true;
         return;
       }
-      queue[tail++] = c;
+      seen++;
+      if (childCount[c] > 0) queue[tail++] = c;
     }
   };
   enqueueChildren(row);

@@ -125,6 +125,28 @@ test('namedDescendants respects its work cap: a deep unnamed comb is cut after m
   assert.equal(w.more, true);
 });
 
+test('namedDescendants: tips count towards the cap, so a wide polytomy of tips is cut there', () => {
+  // 100,000 tips, then one named clade after them
+  const star = snap('(' + Array.from({ length: 100000 }, (_, k) => `t${k}`).join(',') + ',(a,b)Named);');
+  let calls = 0;
+  const counting = { ...FMT, cladeLabel: (node, tr) => (calls++, internalName(tr.labels[tr.toLocal(node)])) };
+  const r = namedDescendants(star, 0, counting, { maxVisits: 50 });
+  assert.deepEqual(r, { names: [], more: true });
+  assert.equal(calls, 0, 'the named clade after the tips is never reached');
+  // and the walk over the children stopped at the cap: count the reads of nextSibling
+  let reads = 0;
+  const nextSibling = new Proxy(star.nextSibling, {
+    get: (a, k) => {
+      if (typeof k === 'string' && /^\d+$/.test(k)) reads++;
+      return Reflect.get(a, k);
+    },
+  });
+  assert.equal(namedDescendants({ ...star, nextSibling }, 0, FMT, { maxVisits: 50 }).more, true);
+  assert.ok(reads <= 50, `${reads} children looked at, at most 50`);
+  // with room for every child it is found
+  assert.deepEqual(names(namedDescendants(star, 0, FMT, { maxVisits: 100001 })), ['Named']);
+});
+
 test('namedDescendants on a partial source: full-tree ids, and a clade that is not loaded is not entered', () => {
   const full = parseNewick(TREE);
   const at = (l) => full.labels.indexOf(l);
